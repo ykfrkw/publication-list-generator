@@ -80,17 +80,32 @@ ui <- page_sidebar(
     )
   ),
 
-  # iframe auto-resize: notify parent of height changes
+  # iframe auto-resize: fix height and notify parent
   tags$script(HTML("
-    if (window.parent !== window) {
-      var ro = new ResizeObserver(function() {
-        window.parent.postMessage(
-          { type: 'orcid-pub-list-resize', height: document.documentElement.scrollHeight },
-          '*'
-        );
-      });
-      ro.observe(document.documentElement);
-    }
+    (function() {
+      // In iframe: disable bslib's 100vh constraint and report true height
+      if (window.parent === window) return;
+
+      function sendHeight() {
+        // bslib sets min-height:100vh on body/.bslib-page-sidebar — override it
+        document.querySelectorAll('.bslib-page-sidebar, body, html').forEach(function(el) {
+          el.style.minHeight = 'auto';
+          el.style.height = 'auto';
+          el.style.overflow = 'visible';
+        });
+        var h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+        window.parent.postMessage({ type: 'orcid-pub-list-resize', height: h + 40 }, '*');
+      }
+
+      // Observe DOM changes (Shiny dynamically renders content)
+      var observer = new MutationObserver(function() { setTimeout(sendHeight, 100); });
+      observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+
+      // Also fire on load and resize
+      window.addEventListener('load', function() { setTimeout(sendHeight, 500); });
+      window.addEventListener('resize', sendHeight);
+      setInterval(sendHeight, 2000); // Periodic fallback
+    })();
   "))
 )
 
