@@ -322,7 +322,6 @@ server <- function(input, output, session) {
         display_name <- if (!is.na(m$resolved_name) && m$resolved_name != "") m$resolved_name else if (!is.na(m$name)) m$name else "Unknown"
         links <- c()
         if (!is.na(m$orcid)) links <- c(links, paste0('<a href="https://orcid.org/', m$orcid, '" target="_blank">ORCID</a>'))
-        if (!is.na(m$openalex)) links <- c(links, paste0('<a href="https://openalex.org/authors/', m$openalex, '" target="_blank">OpenAlex</a>'))
         if (!is.na(m$researchmap)) links <- c(links, paste0('<a href="https://researchmap.jp/', m$researchmap, '" target="_blank">researchmap</a>'))
         link_str <- if (length(links) > 0) paste0(" &mdash; ", paste(links, collapse = " &middot; ")) else ""
         tags$li(HTML(paste0("<b>", htmlEscape(display_name), "</b>", link_str)))
