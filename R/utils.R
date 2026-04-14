@@ -74,7 +74,17 @@ parse_member_input <- function(text) {
   header_row <- rows[[1]]
   header_lower <- str_to_lower(header_row)
 
-  has_header <- any(str_detect(header_lower, "name|氏名|名前|orcid|openalex|researchmap|rm"))
+  # Detect header: keywords must be standalone (not inside URLs like "https://orcid.org/...")
+  # A header cell is a short keyword, not a URL or ID value
+  is_header_cell <- map_lgl(header_row, function(cell) {
+    c_lower <- str_to_lower(str_trim(cell))
+    # Must be a short keyword, not a URL or ID
+    if (str_detect(c_lower, "^https?://")) return(FALSE)
+    if (str_detect(c_lower, "^\\d{4}-\\d{4}")) return(FALSE)  # ORCID ID
+    if (str_detect(c_lower, "^a\\d{5,}$")) return(FALSE)  # OpenAlex ID
+    str_detect(c_lower, "^(name|氏名|名前|orcid|openalex|researchmap|rm)$")
+  })
+  has_header <- any(is_header_cell)
 
   if (has_header) {
     col_map <- list(name = NA_integer_, orcid = NA_integer_, openalex = NA_integer_, researchmap = NA_integer_)
@@ -99,20 +109,31 @@ parse_member_input <- function(text) {
       val
     }
 
+    # Get raw values
+    raw_name <- get_col(col_map$name)
+    raw_orcid <- get_col(col_map$orcid)
+    raw_openalex <- get_col(col_map$openalex)
+    raw_researchmap <- get_col(col_map$researchmap)
+
+    # Also scan ALL cells for URLs that belong in specific columns
+    # This handles cases where a URL is pasted into the wrong column or a single-column input
+    all_vals <- map_chr(seq_along(row), ~ str_trim(row[.x]))
+    for (v in all_vals) {
+      if (is.na(v) || v == "") next
+      if (str_detect(v, "orcid\\.org") && is.na(raw_orcid)) raw_orcid <- v
+      if (str_detect(v, "openalex\\.org") && is.na(raw_openalex)) raw_openalex <- v
+      if (str_detect(v, "researchmap\\.jp") && is.na(raw_researchmap)) raw_researchmap <- v
+      # Detect bare ORCID pattern in any cell
+      if (is.na(raw_orcid) && str_detect(v, "^\\d{4}-\\d{4}-\\d{4}-\\d{3}[\\dX]$")) raw_orcid <- v
+      # Detect bare OpenAlex ID
+      if (is.na(raw_openalex) && str_detect(v, "^A\\d{5,15}$")) raw_openalex <- v
+    }
+
     tibble(
-      name = get_col(col_map$name),
-      orcid = {
-        raw <- get_col(col_map$orcid)
-        if (is.na(raw)) NA_character_ else normalize_orcid(raw)
-      },
-      openalex = {
-        raw <- get_col(col_map$openalex)
-        if (is.na(raw)) NA_character_ else normalize_openalex_id(raw)
-      },
-      researchmap = {
-        raw <- get_col(col_map$researchmap)
-        if (is.na(raw)) NA_character_ else normalize_researchmap_id(raw)
-      }
+      name = raw_name,
+      orcid = if (is.na(raw_orcid)) NA_character_ else normalize_orcid(raw_orcid),
+      openalex = if (is.na(raw_openalex)) NA_character_ else normalize_openalex_id(raw_openalex),
+      researchmap = if (is.na(raw_researchmap)) NA_character_ else normalize_researchmap_id(raw_researchmap)
     )
   })
 

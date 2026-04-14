@@ -17,6 +17,11 @@ for (f in list.files("R", full.names = TRUE, pattern = "\\.R$")) source(f)
 LAST_YEAR <- as.integer(format(Sys.Date(), "%Y")) - 1L
 MONTH_CHOICES <- setNames(1:12, month.abb)
 
+EXAMPLE_TABLE <- "Name\tORCID\tresearchmap
+Yuki Furukawa\thttps://orcid.org/0000-0003-1317-0220\tyk_frkw
+Stefan Leucht\t0000-0002-4573-7732
+Spyridon Siafis\t0000-0001-8264-2039"
+
 # =========================================================
 # UI
 # =========================================================
@@ -25,15 +30,27 @@ ui <- page_sidebar(
   theme = bs_theme(version = 5, bootswatch = "flatly"),
 
   sidebar = sidebar(
-    width = 380,
+    width = 400,
     textAreaInput(
       "members_input",
-      tags$span(
-        "Paste member list ",
-        tags$small("(Excel/TSV/CSV)", class = "text-muted")
-      ),
-      placeholder = "Name\tORCID\tOpenAlex\tresearchmap\nYuki Furukawa\t0000-0003-1317-0220\tA5030252459\tyk_frkw\nStefan Leucht\t0000-0002-4573-7732",
+      tags$span("Paste member list ", tags$small("(Excel/TSV/CSV/URLs)", class = "text-muted")),
+      placeholder = "Name\tORCID\tresearchmap\nYuki Furukawa\thttps://orcid.org/0000-0003-1317-0220\tyk_frkw",
       rows = 6
+    ),
+    tags$details(
+      class = "mb-3",
+      tags$summary(class = "text-muted small", "Show example input"),
+      tags$pre(
+        class = "bg-light p-2 small mt-1",
+        style = "white-space: pre; overflow-x: auto; font-size: 11px;",
+        EXAMPLE_TABLE
+      ),
+      tags$p(
+        class = "text-muted small",
+        "Column order does not matter. Headers are auto-detected.",
+        "You can paste ORCID URLs (https://orcid.org/...), researchmap URLs (https://researchmap.jp/...),",
+        "or bare IDs. OpenAlex author IDs (A followed by digits) are also supported."
+      )
     ),
     tableOutput("members_preview"),
 
@@ -74,7 +91,7 @@ ui <- page_sidebar(
     tags$ul(
       tags$li("Publication type classification is based on OpenAlex metadata and may not always be accurate."),
       tags$li("Only publications registered in the respective profiles will appear. Missing or incorrect entries in profiles will be reflected."),
-      tags$li("OpenAlex author disambiguation may be imperfect. When using OpenAlex author IDs, some publications from other researchers with similar names may be included. Verify results and use ORCID or researchmap for higher accuracy."),
+      tags$li("OpenAlex author disambiguation may be imperfect. Publications where the member's family name does not appear in the author list are automatically filtered out, but some misattributed works may remain."),
       tags$li("For F1000Research and Wellcome Open Research, peer review approval status is checked via Crossref.")
     )
   )
@@ -116,14 +133,12 @@ server <- function(input, output, session) {
     errors <- character()
 
     n_total <- sum(!is.na(members$orcid)) + sum(!is.na(members$openalex)) + sum(!is.na(members$researchmap))
-    step <- 0
 
     withProgress(message = "Fetching publications...", value = 0, {
       # Fetch from ORCID
       for (i in seq_len(nrow(members))) {
         orcid_id <- members$orcid[i]
         if (!is.na(orcid_id)) {
-          step <- step + 1
           incProgress(1 / max(n_total, 1), detail = paste0("ORCID: ", orcid_id))
           tryCatch({
             pubs <- fetch_orcid_works(orcid_id)
@@ -136,17 +151,28 @@ server <- function(input, output, session) {
         }
       }
 
-      # Fetch from OpenAlex (author works)
+      # Fetch from OpenAlex (author works) — filter by member name
       for (i in seq_len(nrow(members))) {
         oa_id <- members$openalex[i]
         if (!is.na(oa_id)) {
-          step <- step + 1
           incProgress(1 / max(n_total, 1), detail = paste0("OpenAlex: ", oa_id))
           tryCatch({
             pubs <- fetch_openalex_author_works(oa_id)
+            # Filter: only keep pubs where member's family name appears in authors
+            member_name <- members$name[i]
+            if (!is.na(member_name) && member_name != "") {
+              before_count <- nrow(pubs)
+              pubs <- filter_openalex_by_name(pubs, member_name)
+              filtered_count <- before_count - nrow(pubs)
+              if (filtered_count > 0) {
+                errors <<- c(errors, paste0(
+                  "OpenAlex: Filtered out ", filtered_count,
+                  " publications for ", oa_id,
+                  " where \"", member_name, "\" was not found in the author list."
+                ))
+              }
+            }
             all_pubs <- bind_rows(all_pubs, pubs)
-            # Do NOT use OpenAlex display_name for bold — disambiguation is unreliable
-            # Bold names come from user-provided Name column + ORCID/researchmap profiles
           }, error = function(e) {
             errors <<- c(errors, paste("OpenAlex error:", oa_id, e$message))
           })
@@ -157,7 +183,6 @@ server <- function(input, output, session) {
       for (i in seq_len(nrow(members))) {
         rm_id <- members$researchmap[i]
         if (!is.na(rm_id)) {
-          step <- step + 1
           incProgress(1 / max(n_total, 1), detail = paste0("researchmap: ", rm_id))
           tryCatch({
             pubs <- fetch_researchmap_works(rm_id)
@@ -224,11 +249,8 @@ server <- function(input, output, session) {
     }
 
     # Build member info (preserve input order)
-    # Collect resolved names per member from ORCID/researchmap (not OpenAlex — unreliable)
-    resolved_per_member <- list()
     for (i in seq_len(nrow(members))) {
       resolved <- members$name[i]
-      # Try to match a bold_name (from ORCID/researchmap profiles) to this member
       if (!is.na(resolved) && resolved != "") {
         for (bn in bold_names) {
           if (str_detect(str_to_lower(bn), fixed(str_to_lower(resolved)))) {
@@ -251,7 +273,11 @@ server <- function(input, output, session) {
       bold_names = bold_names,
       members = member_info,
       errors = errors,
-      style = input$citation_style
+      style = input$citation_style,
+      year_from = year_from,
+      month_from = month_from,
+      year_to = year_to,
+      month_to = month_to
     )
   })
 
@@ -265,24 +291,34 @@ server <- function(input, output, session) {
     members <- res$members
     style <- res$style
 
+    # Title with period
+    period_label <- paste0(
+      "Publication List (",
+      month.abb[res$month_from], " ", res$year_from,
+      " \u2013 ",
+      month.abb[res$month_to], " ", res$year_to,
+      ")"
+    )
+
     # Build member list HTML
     member_html <- if (nrow(members) > 0) {
       member_items <- map(seq_len(nrow(members)), function(i) {
         m <- members[i, ]
-        display_name <- if (!is.na(m$resolved_name)) m$resolved_name else if (!is.na(m$name)) m$name else "Unknown"
+        display_name <- if (!is.na(m$resolved_name) && m$resolved_name != "") m$resolved_name else if (!is.na(m$name)) m$name else "Unknown"
         links <- c()
         if (!is.na(m$orcid)) links <- c(links, paste0('<a href="https://orcid.org/', m$orcid, '" target="_blank">ORCID</a>'))
         if (!is.na(m$openalex)) links <- c(links, paste0('<a href="https://openalex.org/authors/', m$openalex, '" target="_blank">OpenAlex</a>'))
         if (!is.na(m$researchmap)) links <- c(links, paste0('<a href="https://researchmap.jp/', m$researchmap, '" target="_blank">researchmap</a>'))
-        tags$li(HTML(paste0("<b>", htmlEscape(display_name), "</b> &mdash; ", paste(links, collapse = " &middot; "))))
+        link_str <- if (length(links) > 0) paste0(" &mdash; ", paste(links, collapse = " &middot; ")) else ""
+        tags$li(HTML(paste0("<b>", htmlEscape(display_name), "</b>", link_str)))
       })
       tags$div(
-        tags$h6(class = "mb-2", paste0("Members (", nrow(members), ")")),
+        tags$p(style = "font-size:16px; font-weight:bold; margin-bottom:8px;", paste0("Members (", nrow(members), ")")),
         tags$ul(class = "list-unstyled mb-3", member_items)
       )
     } else NULL
 
-    # Build categorized publication lists
+    # Build categorized publication lists — use <p> with inline style for Word compat
     pub_sections <- map(CATEGORY_ORDER, function(cat) {
       cat_pubs <- pubs |> filter(category == cat)
       if (nrow(cat_pubs) == 0) return(NULL)
@@ -298,7 +334,8 @@ server <- function(input, output, session) {
 
       tags$div(
         class = "mb-3",
-        tags$h6(class = "mb-2", paste0(CATEGORY_LABELS[cat], " (", nrow(cat_pubs), ")")),
+        tags$p(style = "font-size:16px; font-weight:bold; margin-bottom:8px;",
+               paste0(CATEGORY_LABELS[cat], " (", nrow(cat_pubs), ")")),
         tags$ol(items)
       )
     }) |> discard(is.null)
@@ -312,11 +349,13 @@ server <- function(input, output, session) {
 
     total <- nrow(pubs)
 
-    copy_js <- tags$script(HTML(sprintf("
+    # Clipboard JS — use explicit font-size in HTML to avoid Word sizing issues
+    copy_js <- tags$script(HTML("
       function copyResults() {
         var el = document.getElementById('results-content');
         if (!el) return;
-        var html = el.innerHTML + '<p style=\"font-size:small;color:gray;\">Generated with <a href=\"https://yukifurukawa.jp/publication-list-generator/\">Publication List Generator</a></p>';
+        var html = '<div style=\"font-family:serif;font-size:12pt;\">' + el.innerHTML + '</div>' +
+          '<p style=\"font-size:9pt;color:gray;\">Generated with <a href=\"https://yukifurukawa.jp/publication-list-generator/\">Publication List Generator</a></p>';
         var plain = el.innerText + '\\nGenerated with Publication List Generator (https://yukifurukawa.jp/publication-list-generator/)';
         try {
           navigator.clipboard.write([new ClipboardItem({
@@ -346,7 +385,7 @@ server <- function(input, output, session) {
           setTimeout(function() { btn.innerText = 'Copy All'; }, 2000);
         }
       }
-    ")))
+    "))
 
     tags$div(
       copy_js,
@@ -363,6 +402,8 @@ server <- function(input, output, session) {
       error_html,
       tags$div(
         id = "results-content",
+        # Title for the period
+        tags$p(style = "font-size:18px; font-weight:bold; margin-bottom:12px;", period_label),
         member_html,
         pub_sections
       )

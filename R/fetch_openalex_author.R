@@ -21,6 +21,31 @@ fetch_openalex_author_name <- function(author_id) {
   }, error = function(e) NA_character_)
 }
 
+# Filter OpenAlex works: keep only those where a member name appears in the author list
+# This filters out mis-attributed publications from OpenAlex disambiguation errors
+filter_openalex_by_name <- function(pubs, member_name) {
+  if (is.na(member_name) || member_name == "" || nrow(pubs) == 0) return(pubs)
+
+  normalize <- function(s) {
+    s |> str_to_lower() |>
+      iconv(to = "ASCII//TRANSLIT") |>
+      str_remove_all("[^a-z ]") |>
+      str_trim()
+  }
+
+  name_norm <- normalize(member_name)
+  name_parts <- str_split(name_norm, "\\s+")[[1]]
+  if (length(name_parts) == 0) return(pubs)
+
+  # Extract family name (last part, accounting for particles)
+  family <- name_parts[length(name_parts)]
+
+  pubs |> filter(
+    is.na(authors) | authors == "" |
+    str_detect(normalize(authors), fixed(family))
+  )
+}
+
 # Fetch all works for an OpenAlex author ID
 fetch_openalex_author_works <- function(author_id) {
   tryCatch({
