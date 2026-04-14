@@ -114,11 +114,67 @@ format_authors_for_style <- function(authors_str, style, bold_names) {
 }
 
 boldify <- function(name, bold_names) {
-  name_lower <- str_to_lower(name)
+  if (name == "" || length(bold_names) == 0) return(htmltools::htmlEscape(name))
+
+  # Normalize for matching: strip accents, lowercase
+  normalize_for_match <- function(s) {
+    s |>
+      str_to_lower() |>
+      iconv(to = "ASCII//TRANSLIT") |>  # ü→u, é→e, etc.
+      str_remove_all("[^a-z ]") |>
+      str_trim()
+  }
+
+  name_norm <- normalize_for_match(name)
+
   for (bn in bold_names) {
-    parts <- str_split(str_to_lower(bn), "\\s+")[[1]]
-    if (all(map_lgl(parts, ~ str_detect(name_lower, fixed(.x))))) {
+    bn_norm <- normalize_for_match(bn)
+
+    # Strategy 1: All parts of bold_name appear in author name (original logic)
+    bn_parts <- str_split(bn_norm, "\\s+")[[1]]
+    if (length(bn_parts) > 0 && all(vapply(bn_parts, function(p) str_detect(name_norm, fixed(p)), logical(1)))) {
       return(paste0("<strong><u>", htmltools::htmlEscape(name), "</u></strong>"))
+    }
+
+    # Strategy 2: Family name + initial match
+    # e.g., bold_name="Spyridon Siafis" should match "Siafis S" or "S Siafis"
+    # Extract family name (last part, or compound like "van Straten")
+    bn_words <- str_split(bn_norm, "\\s+")[[1]]
+    if (length(bn_words) >= 2) {
+      # Try compound surname detection: if a word is a particle (van, von, de, del, la, le, el, al)
+      particles <- c("van", "von", "de", "del", "di", "la", "le", "el", "al", "den", "der", "das", "dos")
+      # Find where surname starts (first particle or last word)
+      surname_start <- length(bn_words)
+      for (k in seq_along(bn_words)) {
+        if (bn_words[k] %in% particles && k < length(bn_words)) {
+          surname_start <- k
+          break
+        }
+      }
+      family <- paste(bn_words[surname_start:length(bn_words)], collapse = " ")
+      given_parts <- bn_words[seq_len(surname_start - 1)]
+      given_initials <- paste0(substr(given_parts, 1, 1), collapse = "")
+
+      name_words <- str_split(name_norm, "\\s+")[[1]]
+
+      # Check: does name contain family name?
+      family_match <- str_detect(name_norm, fixed(family))
+
+      if (family_match) {
+        # Check if remaining part is initials of given name
+        name_without_family <- str_trim(str_remove(name_norm, fixed(family)))
+        name_initials <- paste0(substr(str_split(name_without_family, "\\s*")[[1]], 1, 1), collapse = "")
+        # Also try: remaining is just the first letter(s)
+        name_remaining_chars <- str_remove_all(name_without_family, "\\s+")
+
+        if (name_remaining_chars == "" ||  # family name only
+            str_detect(given_initials, fixed(name_remaining_chars)) ||
+            str_detect(name_remaining_chars, fixed(given_initials)) ||
+            # Single initial match
+            (nchar(name_remaining_chars) == 1 && substr(given_initials, 1, 1) == name_remaining_chars)) {
+          return(paste0("<strong><u>", htmltools::htmlEscape(name), "</u></strong>"))
+        }
+      }
     }
   }
   htmltools::htmlEscape(name)

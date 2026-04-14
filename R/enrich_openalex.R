@@ -36,11 +36,26 @@ fetch_openalex_by_doi <- function(doi) {
 }
 
 # Format author name: "Yuki Furukawa" → "Furukawa Y"
+# Handles compound surnames: "Annemieke van Straten" → "van Straten A"
 format_author_short <- function(display_name) {
   parts <- str_split(str_trim(display_name), "\\s+")[[1]]
   if (length(parts) == 1) return(parts[1])
-  family <- parts[length(parts)]
-  initials <- paste0(substr(parts[-length(parts)], 1, 1), collapse = "")
+
+  # Detect surname particles
+  particles <- c("van", "von", "de", "del", "di", "la", "le", "el", "al",
+                  "den", "der", "das", "dos", "du", "ten")
+  # Find where surname starts
+  surname_start <- length(parts)
+  for (k in seq_along(parts)) {
+    if (str_to_lower(parts[k]) %in% particles && k < length(parts) && k > 1) {
+      surname_start <- k
+      break
+    }
+  }
+
+  family <- paste(parts[surname_start:length(parts)], collapse = " ")
+  given_parts <- parts[seq_len(surname_start - 1)]
+  initials <- paste0(substr(given_parts, 1, 1), collapse = "")
   paste(family, initials)
 }
 
@@ -64,7 +79,7 @@ enrich_with_openalex <- function(df, progress_fn = NULL) {
     if (!is.null(meta)) {
       if (is.na(df$authors[idx]) || df$authors[idx] == "") df$authors[idx] <- meta$authors
       if (df$journal[idx] == "" && !is.na(meta$journal)) df$journal[idx] <- meta$journal
-      if (is.na(df$pmid[idx]) && !is.na(meta$pmid)) df$pmid[idx] <- meta$pmid
+      if ((is.na(df$pmid[idx]) || df$pmid[idx] == "") && !is.na(meta$pmid)) df$pmid[idx] <- meta$pmid
       df$openalex_type[idx] <- meta$type
     }
 

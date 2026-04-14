@@ -300,7 +300,7 @@ server <- function(input, output, session) {
         p <- cat_pubs[j, ]
         citation_html <- format_citation(p$authors, p$title, p$journal, p$year, p$doi, style, bold_names)
         pmid_html <- if (!is.na(p$pmid) && p$pmid != "") {
-          paste0(' <small class="text-muted">PMID: <a href="https://pubmed.ncbi.nlm.nih.gov/', p$pmid, '" target="_blank">', p$pmid, '</a></small>')
+          paste0(' PMID: <a href="https://pubmed.ncbi.nlm.nih.gov/', p$pmid, '" target="_blank">', p$pmid, '</a>')
         } else ""
         tags$li(HTML(paste0(citation_html, pmid_html)))
       })
