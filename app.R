@@ -78,7 +78,20 @@ ui <- page_sidebar(
       tags$li("OpenAlex author disambiguation may be imperfect. Publications where the member's family name does not appear in the author list are automatically filtered out, but some misattributed works may remain."),
       tags$li("For F1000Research and Wellcome Open Research, peer review approval status is checked via Crossref.")
     )
-  )
+  ),
+
+  # iframe auto-resize: notify parent of height changes
+  tags$script(HTML("
+    if (window.parent !== window) {
+      var ro = new ResizeObserver(function() {
+        window.parent.postMessage(
+          { type: 'orcid-pub-list-resize', height: document.documentElement.scrollHeight },
+          '*'
+        );
+      });
+      ro.observe(document.documentElement);
+    }
+  "))
 )
 
 # =========================================================
