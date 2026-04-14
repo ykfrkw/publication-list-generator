@@ -1,3 +1,16 @@
+# ── Security: credentials & secrets (standard block) ─────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+credentials*.json
+secrets/
+.secret
+
 .Rproj.user
 .Rhistory
 .RData
