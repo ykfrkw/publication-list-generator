@@ -5,7 +5,11 @@
 
 library(shiny)
 library(bslib)
-library(tidyverse)
+library(dplyr)
+library(purrr)
+library(stringr)
+library(tibble)
+library(tidyr)
 library(httr)
 library(jsonlite)
 library(glue)

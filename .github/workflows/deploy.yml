@@ -23,9 +23,14 @@ jobs:
         with:
           r-version: '4.4'
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev libharfbuzz-dev libfribidi-dev libpng-dev libtiff5-dev libjpeg-dev libxml2-dev
+
       - name: Install R packages
         run: |
-          install.packages(c("shinylive", "bslib", "tidyverse", "httr", "jsonlite", "glue", "htmltools"), repos = "https://cran.r-project.org")
+          install.packages(c("shinylive", "shiny", "bslib", "dplyr", "purrr", "stringr", "tibble", "tidyr", "httr", "jsonlite", "glue", "htmltools"), repos = "https://cran.r-project.org")
         shell: Rscript {0}
 
       - name: Export Shinylive
