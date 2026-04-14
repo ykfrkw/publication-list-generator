@@ -276,8 +276,8 @@ server <- function(input, output, session) {
         }
       }
 
-      # 3. Format as "Family I" (short form) for consistency
-      display_name <- if (!is.na(resolved)) format_author_short(resolved) else "Unknown"
+      # 3. Full name for Members list display
+      display_name <- if (!is.na(resolved)) resolved else "Unknown"
 
       # Also ensure the full name is in bold_names for highlighting
       if (!is.na(resolved) && !resolved %in% bold_names) {
