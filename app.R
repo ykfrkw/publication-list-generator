@@ -74,6 +74,7 @@ ui <- page_sidebar(
     tags$ul(
       tags$li("Publication type classification is based on OpenAlex metadata and may not always be accurate."),
       tags$li("Only publications registered in the respective profiles will appear. Missing or incorrect entries in profiles will be reflected."),
+      tags$li("OpenAlex author disambiguation may be imperfect. When using OpenAlex author IDs, some publications from other researchers with similar names may be included. Verify results and use ORCID or researchmap for higher accuracy."),
       tags$li("For F1000Research and Wellcome Open Research, peer review approval status is checked via Crossref.")
     )
   )
@@ -144,8 +145,8 @@ server <- function(input, output, session) {
           tryCatch({
             pubs <- fetch_openalex_author_works(oa_id)
             all_pubs <- bind_rows(all_pubs, pubs)
-            oaname <- fetch_openalex_author_name(oa_id)
-            if (!is.na(oaname)) bold_names <- c(bold_names, oaname)
+            # Do NOT use OpenAlex display_name for bold — disambiguation is unreliable
+            # Bold names come from user-provided Name column + ORCID/researchmap profiles
           }, error = function(e) {
             errors <<- c(errors, paste("OpenAlex error:", oa_id, e$message))
           })
@@ -223,12 +224,17 @@ server <- function(input, output, session) {
     }
 
     # Build member info (preserve input order)
+    # Collect resolved names per member from ORCID/researchmap (not OpenAlex — unreliable)
+    resolved_per_member <- list()
     for (i in seq_len(nrow(members))) {
-      resolved <- NA_character_
-      for (bn in bold_names) {
-        if (!is.na(members$name[i]) && str_detect(str_to_lower(bn), fixed(str_to_lower(members$name[i])))) {
-          resolved <- bn
-          break
+      resolved <- members$name[i]
+      # Try to match a bold_name (from ORCID/researchmap profiles) to this member
+      if (!is.na(resolved) && resolved != "") {
+        for (bn in bold_names) {
+          if (str_detect(str_to_lower(bn), fixed(str_to_lower(resolved)))) {
+            resolved <- bn
+            break
+          }
         }
       }
       member_info <- bind_rows(member_info, tibble(
@@ -236,9 +242,7 @@ server <- function(input, output, session) {
         orcid = members$orcid[i],
         openalex = members$openalex[i],
         researchmap = members$researchmap[i],
-        resolved_name = if (is.na(resolved)) {
-          if (i <= length(bold_names)) bold_names[i] else members$name[i]
-        } else resolved
+        resolved_name = resolved
       ))
     }
 
