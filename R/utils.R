@@ -25,12 +25,12 @@ normalize_orcid <- function(x) {
     str_to_upper()
 }
 
-# Google Scholar ID normalization
-normalize_scholar_id <- function(x) {
+# OpenAlex author ID normalization
+normalize_openalex_id <- function(x) {
   x |>
     str_trim() |>
-    str_remove("^https?://scholar\\.google\\.(com|co\\.jp|de|fr|co\\.uk)/citations\\?user=") |>
-    str_remove("&.*$")  # strip query params like &hl=ja
+    str_remove("^https?://openalex\\.org/") |>
+    str_remove("^authors/")
 }
 
 # researchmap ID normalization
@@ -38,7 +38,7 @@ normalize_researchmap_id <- function(x) {
   x |>
     str_trim() |>
     str_remove("^https?://researchmap\\.jp/") |>
-    str_remove("/.*$") |>  # strip trailing path segments
+    str_remove("/.*$") |>
     str_remove("/$")
 }
 
@@ -47,14 +47,13 @@ is_orcid_id <- function(x) {
   str_detect(x, "\\d{4}-\\d{4}-\\d{4}-\\d{3}[\\dX]")
 }
 
-is_scholar_id <- function(x) {
-  # Google Scholar IDs are typically 12 chars, alphanumeric + _ + -
-  str_detect(x, "^[A-Za-z0-9_-]{10,14}$") & !is_orcid_id(x)
+is_openalex_id <- function(x) {
+  # OpenAlex author IDs: A followed by digits (e.g., A5011934579)
+  str_detect(x, "^A\\d{5,15}$")
 }
 
 is_researchmap_id <- function(x) {
-  # researchmap permalinks: alphanumeric + underscores, shorter
-  str_detect(x, "^[A-Za-z0-9_]{2,30}$") & !is_orcid_id(x) & !is_scholar_id(x)
+  str_detect(x, "^[A-Za-z0-9_]{2,30}$") & !is_orcid_id(x) & !is_openalex_id(x)
 }
 
 # Parse member input (Excel/TSV/CSV paste)
@@ -75,26 +74,23 @@ parse_member_input <- function(text) {
   header_row <- rows[[1]]
   header_lower <- str_to_lower(header_row)
 
-  has_header <- any(str_detect(header_lower, "name|氏名|名前|orcid|scholar|google|researchmap|rm"))
+  has_header <- any(str_detect(header_lower, "name|氏名|名前|orcid|openalex|researchmap|rm"))
 
   if (has_header) {
-    # Map columns by header keywords
-    col_map <- list(name = NA_integer_, orcid = NA_integer_, scholar = NA_integer_, researchmap = NA_integer_)
+    col_map <- list(name = NA_integer_, orcid = NA_integer_, openalex = NA_integer_, researchmap = NA_integer_)
     for (i in seq_along(header_lower)) {
       h <- header_lower[i]
       if (str_detect(h, "name|氏名|名前")) col_map$name <- i
       else if (str_detect(h, "orcid")) col_map$orcid <- i
-      else if (str_detect(h, "scholar|google")) col_map$scholar <- i
+      else if (str_detect(h, "openalex")) col_map$openalex <- i
       else if (str_detect(h, "researchmap|rm")) col_map$researchmap <- i
     }
     data_rows <- rows[-1]
   } else {
-    # Auto-detect columns by content patterns
     col_map <- auto_detect_columns(rows)
     data_rows <- rows
   }
 
-  # Build tibble
   members <- map_dfr(data_rows, function(row) {
     get_col <- function(idx) {
       if (is.na(idx) || idx > length(row)) return(NA_character_)
@@ -109,9 +105,9 @@ parse_member_input <- function(text) {
         raw <- get_col(col_map$orcid)
         if (is.na(raw)) NA_character_ else normalize_orcid(raw)
       },
-      scholar = {
-        raw <- get_col(col_map$scholar)
-        if (is.na(raw)) NA_character_ else normalize_scholar_id(raw)
+      openalex = {
+        raw <- get_col(col_map$openalex)
+        if (is.na(raw)) NA_character_ else normalize_openalex_id(raw)
       },
       researchmap = {
         raw <- get_col(col_map$researchmap)
@@ -120,37 +116,30 @@ parse_member_input <- function(text) {
     )
   })
 
-  # Filter out completely empty rows
-  members |> filter(!is.na(orcid) | !is.na(scholar) | !is.na(researchmap))
+  members |> filter(!is.na(orcid) | !is.na(openalex) | !is.na(researchmap))
 }
 
 # Auto-detect column types from content
 auto_detect_columns <- function(rows) {
-  if (length(rows) == 0) return(list(name = NA, orcid = NA, scholar = NA, researchmap = NA))
+  if (length(rows) == 0) return(list(name = NA, orcid = NA, openalex = NA, researchmap = NA))
 
   n_cols <- max(map_int(rows, length))
-  col_map <- list(name = NA_integer_, orcid = NA_integer_, scholar = NA_integer_, researchmap = NA_integer_)
+  col_map <- list(name = NA_integer_, orcid = NA_integer_, openalex = NA_integer_, researchmap = NA_integer_)
 
   for (i in seq_len(n_cols)) {
     vals <- map_chr(rows, ~ if (length(.x) >= i) .x[i] else "")
     non_empty <- vals[vals != ""]
     if (length(non_empty) == 0) next
 
-    # Check if column contains ORCID-like patterns
     if (any(str_detect(non_empty, "\\d{4}-\\d{4}-\\d{4}-\\d{3}[\\dX]|orcid\\.org"))) {
       col_map$orcid <- i
-    } else if (any(str_detect(non_empty, "scholar\\.google"))) {
-      col_map$scholar <- i
+    } else if (any(str_detect(non_empty, "openalex\\.org|^A\\d{5,15}$"))) {
+      col_map$openalex <- i
     } else if (any(str_detect(non_empty, "researchmap\\.jp"))) {
       col_map$researchmap <- i
-    } else if (all(str_detect(non_empty, "^[A-Za-z0-9_-]{10,14}$"))) {
-      # Likely Scholar IDs
-      if (is.na(col_map$scholar)) col_map$scholar <- i
     } else if (all(str_detect(non_empty, "^[A-Za-z0-9_]{2,30}$")) && !any(str_detect(non_empty, " "))) {
-      # Likely researchmap permalinks
       if (is.na(col_map$researchmap)) col_map$researchmap <- i
     } else {
-      # Contains spaces or mixed content → likely names
       if (is.na(col_map$name)) col_map$name <- i
     }
   }

@@ -1,6 +1,6 @@
 # =========================================================
 # Publication List Generator — Multi-Source Shiny App
-# ORCID + Google Scholar + researchmap
+# ORCID + OpenAlex + researchmap
 # =========================================================
 
 library(shiny)
@@ -8,7 +8,6 @@ library(bslib)
 library(tidyverse)
 library(httr)
 library(jsonlite)
-library(scholar)
 library(glue)
 library(htmltools)
 
@@ -33,7 +32,7 @@ ui <- page_sidebar(
         "Paste member list ",
         tags$small("(Excel/TSV/CSV)", class = "text-muted")
       ),
-      placeholder = "Name\tORCID\tScholar\tresearchmap\nYuki Furukawa\t0000-0003-1317-0220\t_twsS0cAAAAJ\tyk_frkw\nStefan Leucht\t0000-0002-4573-7732",
+      placeholder = "Name\tORCID\tOpenAlex\tresearchmap\nYuki Furukawa\t0000-0003-1317-0220\tA5030252459\tyk_frkw\nStefan Leucht\t0000-0002-4573-7732",
       rows = 6
     ),
     tableOutput("members_preview"),
@@ -69,10 +68,8 @@ ui <- page_sidebar(
       tags$b("Disclaimer:"),
       "This tool retrieves publication data from",
       tags$a("ORCID", href = "https://orcid.org", target = "_blank"), ",",
-      tags$a("Google Scholar", href = "https://scholar.google.com", target = "_blank"), ", and",
-      tags$a("researchmap", href = "https://researchmap.jp", target = "_blank"), ",",
-      "and enriches it using",
-      tags$a("OpenAlex", href = "https://openalex.org", target = "_blank"), "."
+      tags$a("OpenAlex", href = "https://openalex.org", target = "_blank"), ", and",
+      tags$a("researchmap", href = "https://researchmap.jp", target = "_blank"), "."
     ),
     tags$ul(
       tags$li("Publication type classification is based on OpenAlex metadata and may not always be accurate."),
@@ -87,22 +84,20 @@ ui <- page_sidebar(
 # =========================================================
 server <- function(input, output, session) {
 
-  # Reactive: parsed members from input
   parsed_members <- reactive({
     parse_member_input(input$members_input)
   })
 
-  # Preview table
   output$members_preview <- renderTable({
     m <- parsed_members()
     if (nrow(m) == 0) return(NULL)
 
     m |> mutate(
       ORCID = if_else(!is.na(orcid), "\u2713", ""),
-      Scholar = if_else(!is.na(scholar), "\u2713", ""),
+      OpenAlex = if_else(!is.na(openalex), "\u2713", ""),
       researchmap = if_else(!is.na(researchmap), "\u2713", ""),
       Name = if_else(is.na(name), "\u2014", name)
-    ) |> select(Name, ORCID, Scholar, researchmap)
+    ) |> select(Name, ORCID, OpenAlex, researchmap)
   }, striped = TRUE, hover = TRUE, spacing = "s", width = "100%")
 
   # Main pipeline
@@ -114,12 +109,12 @@ server <- function(input, output, session) {
     bold_names <- character()
     member_info <- tibble(
       name = character(), orcid = character(),
-      scholar = character(), researchmap = character(),
+      openalex = character(), researchmap = character(),
       resolved_name = character()
     )
     errors <- character()
 
-    n_total <- sum(!is.na(members$orcid)) + sum(!is.na(members$scholar)) + sum(!is.na(members$researchmap))
+    n_total <- sum(!is.na(members$orcid)) + sum(!is.na(members$openalex)) + sum(!is.na(members$researchmap))
     step <- 0
 
     withProgress(message = "Fetching publications...", value = 0, {
@@ -140,26 +135,20 @@ server <- function(input, output, session) {
         }
       }
 
-      # Fetch from Google Scholar
+      # Fetch from OpenAlex (author works)
       for (i in seq_len(nrow(members))) {
-        scholar_id <- members$scholar[i]
-        if (!is.na(scholar_id)) {
+        oa_id <- members$openalex[i]
+        if (!is.na(oa_id)) {
           step <- step + 1
-          incProgress(1 / max(n_total, 1), detail = paste0("Scholar: ", scholar_id))
-          tryCatch(
-            withCallingHandlers({
-              pubs <- fetch_scholar_works(scholar_id)
-              all_pubs <- bind_rows(all_pubs, pubs)
-              sname <- fetch_scholar_name(scholar_id)
-              if (!is.na(sname)) bold_names <- c(bold_names, sname)
-              if (nrow(pubs) == 0) {
-                errors <<- c(errors, paste0("Google Scholar: Could not fetch data for ", scholar_id, ". Google may be blocking requests."))
-              }
-            }, warning = function(w) invokeRestart("muffleWarning")),
-            error = function(e) {
-              errors <<- c(errors, paste("Scholar error:", scholar_id, e$message))
-            }
-          )
+          incProgress(1 / max(n_total, 1), detail = paste0("OpenAlex: ", oa_id))
+          tryCatch({
+            pubs <- fetch_openalex_author_works(oa_id)
+            all_pubs <- bind_rows(all_pubs, pubs)
+            oaname <- fetch_openalex_author_name(oa_id)
+            if (!is.na(oaname)) bold_names <- c(bold_names, oaname)
+          }, error = function(e) {
+            errors <<- c(errors, paste("OpenAlex error:", oa_id, e$message))
+          })
         }
       }
 
@@ -215,16 +204,13 @@ server <- function(input, output, session) {
         incProgress(pct * 0.6, detail = msg)
       })
 
-      # Title-based search for pubs without DOI
       all_pubs <- enrich_by_title(all_pubs, progress_fn = function(pct, msg) {
         incProgress(pct * 0.2, detail = msg)
       })
 
-      # Peer review check
       incProgress(0.1, detail = "Checking peer review status...")
       all_pubs <- enrich_peer_review(all_pubs)
 
-      # Categorize
       incProgress(0.1, detail = "Categorizing...")
       all_pubs <- categorize_all(all_pubs)
     })
@@ -239,7 +225,6 @@ server <- function(input, output, session) {
     # Build member info (preserve input order)
     for (i in seq_len(nrow(members))) {
       resolved <- NA_character_
-      # Try to find a resolved name
       for (bn in bold_names) {
         if (!is.na(members$name[i]) && str_detect(str_to_lower(bn), fixed(str_to_lower(members$name[i])))) {
           resolved <- bn
@@ -249,9 +234,11 @@ server <- function(input, output, session) {
       member_info <- bind_rows(member_info, tibble(
         name = members$name[i] %||% NA_character_,
         orcid = members$orcid[i],
-        scholar = members$scholar[i],
+        openalex = members$openalex[i],
         researchmap = members$researchmap[i],
-        resolved_name = if (is.na(resolved)) bold_names[i] %||% members$name[i] else resolved
+        resolved_name = if (is.na(resolved)) {
+          if (i <= length(bold_names)) bold_names[i] else members$name[i]
+        } else resolved
       ))
     }
 
@@ -281,7 +268,7 @@ server <- function(input, output, session) {
         display_name <- if (!is.na(m$resolved_name)) m$resolved_name else if (!is.na(m$name)) m$name else "Unknown"
         links <- c()
         if (!is.na(m$orcid)) links <- c(links, paste0('<a href="https://orcid.org/', m$orcid, '" target="_blank">ORCID</a>'))
-        if (!is.na(m$scholar)) links <- c(links, paste0('<a href="https://scholar.google.com/citations?user=', m$scholar, '" target="_blank">Google Scholar</a>'))
+        if (!is.na(m$openalex)) links <- c(links, paste0('<a href="https://openalex.org/authors/', m$openalex, '" target="_blank">OpenAlex</a>'))
         if (!is.na(m$researchmap)) links <- c(links, paste0('<a href="https://researchmap.jp/', m$researchmap, '" target="_blank">researchmap</a>'))
         tags$li(HTML(paste0("<b>", htmlEscape(display_name), "</b> &mdash; ", paste(links, collapse = " &middot; "))))
       })
@@ -312,7 +299,6 @@ server <- function(input, output, session) {
       )
     }) |> discard(is.null)
 
-    # Error display
     error_html <- if (length(res$errors) > 0) {
       tags$div(
         class = "alert alert-warning",
@@ -322,7 +308,6 @@ server <- function(input, output, session) {
 
     total <- nrow(pubs)
 
-    # Clipboard JS
     copy_js <- tags$script(HTML(sprintf("
       function copyResults() {
         var el = document.getElementById('results-content');
@@ -339,7 +324,6 @@ server <- function(input, output, session) {
             setTimeout(function() { btn.innerText = 'Copy All'; }, 2000);
           });
         } catch(e) {
-          // Fallback
           var tmp = document.createElement('div');
           tmp.innerHTML = html;
           tmp.style.position = 'fixed';
