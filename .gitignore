@@ -7,3 +7,4 @@ renv/staging/
 .Rprofile
 *.Rproj
 .DS_Store
+_site/
