@@ -146,14 +146,20 @@ server <- function(input, output, session) {
         if (!is.na(scholar_id)) {
           step <- step + 1
           incProgress(1 / max(n_total, 1), detail = paste0("Scholar: ", scholar_id))
-          tryCatch({
-            pubs <- fetch_scholar_works(scholar_id)
-            all_pubs <- bind_rows(all_pubs, pubs)
-            sname <- fetch_scholar_name(scholar_id)
-            if (!is.na(sname)) bold_names <- c(bold_names, sname)
-          }, error = function(e) {
-            errors <<- c(errors, paste("Scholar error:", scholar_id, e$message))
-          })
+          tryCatch(
+            withCallingHandlers({
+              pubs <- fetch_scholar_works(scholar_id)
+              all_pubs <- bind_rows(all_pubs, pubs)
+              sname <- fetch_scholar_name(scholar_id)
+              if (!is.na(sname)) bold_names <- c(bold_names, sname)
+              if (nrow(pubs) == 0) {
+                errors <<- c(errors, paste0("Google Scholar: Could not fetch data for ", scholar_id, ". Google may be blocking requests."))
+              }
+            }, warning = function(w) invokeRestart("muffleWarning")),
+            error = function(e) {
+              errors <<- c(errors, paste("Scholar error:", scholar_id, e$message))
+            }
+          )
         }
       }
 

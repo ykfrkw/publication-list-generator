@@ -12,14 +12,17 @@ OPEN_REVIEW_JOURNALS <- c(
   "gates open research", "hrb open research"
 )
 
+# These functions accept a single string (not vectorized)
 is_preprint_server <- function(journal) {
+  if (is.na(journal) || journal == "") return(FALSE)
   j <- str_to_lower(journal)
-  any(str_detect(j, fixed(PREPRINT_SERVERS)))
+  any(vapply(PREPRINT_SERVERS, function(s) str_detect(j, fixed(s)), logical(1)))
 }
 
 is_open_review_journal <- function(journal) {
+  if (is.na(journal) || journal == "") return(FALSE)
   j <- str_to_lower(journal)
-  any(map_lgl(OPEN_REVIEW_JOURNALS, ~ str_detect(j, fixed(.x))))
+  any(vapply(OPEN_REVIEW_JOURNALS, function(s) str_detect(j, fixed(s)), logical(1)))
 }
 
 # Vectorized version for use in mutate

@@ -1,0 +1,10 @@
+name: publication-list-generator
+title:
+username: yuki-furukawa
+account: yuki-furukawa
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 17127796
+bundleId: 11847363
+url: https://yuki-furukawa.shinyapps.io/publication-list-generator/
+version: 1

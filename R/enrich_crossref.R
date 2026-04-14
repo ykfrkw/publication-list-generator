@@ -37,7 +37,7 @@ enrich_peer_review <- function(df) {
 
   df$peer_review_approved <- NA
 
-  open_review_idx <- which(!is.na(df$doi) & is_open_review_journal(df$journal))
+  open_review_idx <- which(!is.na(df$doi) & vapply(df$journal, is_open_review_journal, logical(1)))
 
   for (idx in open_review_idx) {
     df$peer_review_approved[idx] <- check_peer_review_approval(df$doi[idx])
