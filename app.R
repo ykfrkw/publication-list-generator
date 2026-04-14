@@ -17,10 +17,6 @@ for (f in list.files("R", full.names = TRUE, pattern = "\\.R$")) source(f)
 LAST_YEAR <- as.integer(format(Sys.Date(), "%Y")) - 1L
 MONTH_CHOICES <- setNames(1:12, month.abb)
 
-EXAMPLE_TABLE <- "Name\tORCID\tresearchmap
-Yuki Furukawa\thttps://orcid.org/0000-0003-1317-0220\tyk_frkw
-Stefan Leucht\t0000-0002-4573-7732
-Spyridon Siafis\t0000-0001-8264-2039"
 
 # =========================================================
 # UI
@@ -33,26 +29,10 @@ ui <- page_sidebar(
     width = 400,
     textAreaInput(
       "members_input",
-      tags$span("Paste member list ", tags$small("(Excel/TSV/CSV/URLs)", class = "text-muted")),
-      placeholder = "Name\tORCID\tresearchmap\nYuki Furukawa\thttps://orcid.org/0000-0003-1317-0220\tyk_frkw",
+      "Paste member list",
+      placeholder = "https://orcid.org/0000-0003-1317-0220\nhttps://researchmap.jp/yk_frkw",
       rows = 6
     ),
-    tags$details(
-      class = "mb-3",
-      tags$summary(class = "text-muted small", "Show example input"),
-      tags$pre(
-        class = "bg-light p-2 small mt-1",
-        style = "white-space: pre; overflow-x: auto; font-size: 11px;",
-        EXAMPLE_TABLE
-      ),
-      tags$p(
-        class = "text-muted small",
-        "Column order does not matter. Headers are auto-detected.",
-        "You can paste ORCID URLs (https://orcid.org/...), researchmap URLs (https://researchmap.jp/...),",
-        "or bare IDs. OpenAlex author IDs (A followed by digits) are also supported."
-      )
-    ),
-    tableOutput("members_preview"),
 
     layout_column_wrap(
       width = 1 / 2,
@@ -105,17 +85,6 @@ server <- function(input, output, session) {
   parsed_members <- reactive({
     parse_member_input(input$members_input)
   })
-
-  output$members_preview <- renderTable({
-    m <- parsed_members()
-    if (nrow(m) == 0) return(NULL)
-
-    m |> mutate(
-      ORCID = if_else(!is.na(orcid), "\u2713", ""),
-      researchmap = if_else(!is.na(researchmap), "\u2713", ""),
-      Name = if_else(is.na(name), "\u2014", name)
-    ) |> select(Name, ORCID, researchmap)
-  }, striped = TRUE, hover = TRUE, spacing = "s", width = "100%")
 
   # Main pipeline
   results <- eventReactive(input$generate, {
