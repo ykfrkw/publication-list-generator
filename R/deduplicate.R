@@ -2,8 +2,53 @@
 # Deduplication: DOI (primary) + title (fallback)
 # =========================================================
 
+# Collapse versioned DOIs: 10.12688/xxx.1, xxx.2, xxx.3 → keep latest
+# Applies to F1000Research, Wellcome Open Research, Gates Open Research, etc.
+# Pattern: base DOI ending in .N where N is a version number
+collapse_versioned_dois <- function(df) {
+  if (nrow(df) == 0) return(df)
+
+  # Detect versioned DOIs: pattern like "prefix.N" where N is 1-9
+  df <- df |> mutate(
+    doi_base = if_else(
+      !is.na(doi) & str_detect(doi, "\\.[1-9]\\d?$"),
+      str_remove(doi, "\\.[1-9]\\d?$"),
+      NA_character_
+    ),
+    doi_version = if_else(
+      !is.na(doi_base),
+      as.integer(str_extract(doi, "\\d+$")),
+      NA_integer_
+    )
+  )
+
+  # Split into versioned and non-versioned
+  versioned <- df |> filter(!is.na(doi_base))
+  non_versioned <- df |> filter(is.na(doi_base))
+
+  if (nrow(versioned) > 0) {
+    # Keep only the row with highest version per base DOI
+    versioned <- versioned |>
+      group_by(doi_base) |>
+      slice_max(doi_version, n = 1, with_ties = FALSE) |>
+      ungroup()
+  }
+
+  bind_rows(non_versioned, versioned) |>
+    select(-doi_base, -doi_version)
+}
+
 deduplicate_pubs <- function(df) {
   if (nrow(df) == 0) return(df)
+
+  # Remove corrections/errata
+  df <- df |> filter(
+    !str_detect(str_to_lower(title), "^(correction|erratum|corrigendum)\\b")
+  )
+
+  # For versioned DOIs (F1000Research, Wellcome, etc.): keep only the latest version
+  # e.g., 10.12688/wellcomeopenres.23033.2 and .3 and .4 → keep .4
+  df <- collapse_versioned_dois(df)
 
   # Normalize title for matching
   df <- df |> mutate(

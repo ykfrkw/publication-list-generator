@@ -46,7 +46,7 @@ categorize_pub <- function(journal, orcid_type, openalex_type, peer_review_appro
     if (oa_type == "editorial") return("editorial")
     if (oa_type %in% c("article", "review")) return("original")
     if (oa_type == "preprint") return("preprint")
-    if (oa_type %in% c("erratum", "paratext")) return("other")
+    if (oa_type %in% c("erratum", "paratext")) return("exclude")
   }
 
   # 4. Fallback to ORCID/researchmap type

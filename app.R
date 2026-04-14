@@ -260,6 +260,9 @@ server <- function(input, output, session) {
 
       incProgress(0.1, detail = "Categorizing...")
       all_pubs <- categorize_all(all_pubs)
+
+      # Remove excluded items (erratum, paratext, corrections)
+      all_pubs <- all_pubs |> filter(category != "exclude")
     })
 
     # Sort
