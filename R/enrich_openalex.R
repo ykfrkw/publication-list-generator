@@ -38,7 +38,16 @@ fetch_openalex_by_doi <- function(doi) {
 # Format author name: "Yuki Furukawa" → "Furukawa Y"
 # Handles compound surnames: "Annemieke van Straten" → "van Straten A"
 format_author_short <- function(display_name) {
+  # Title-case each part first to handle ALL CAPS input
+  cap_word <- function(w) {
+    lw <- str_to_lower(w)
+    # Preserve particles as lowercase
+    if (lw %in% c("van", "von", "de", "del", "di", "la", "le", "el", "al",
+                   "den", "der", "das", "dos", "du", "ten")) return(lw)
+    paste0(toupper(substr(lw, 1, 1)), substr(lw, 2, nchar(lw)))
+  }
   parts <- str_split(str_trim(display_name), "\\s+")[[1]]
+  parts <- map_chr(parts, cap_word)
   if (length(parts) == 1) return(parts[1])
 
   # Detect surname particles

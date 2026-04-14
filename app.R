@@ -112,10 +112,9 @@ server <- function(input, output, session) {
 
     m |> mutate(
       ORCID = if_else(!is.na(orcid), "\u2713", ""),
-      OpenAlex = if_else(!is.na(openalex), "\u2713", ""),
       researchmap = if_else(!is.na(researchmap), "\u2713", ""),
       Name = if_else(is.na(name), "\u2014", name)
-    ) |> select(Name, ORCID, OpenAlex, researchmap)
+    ) |> select(Name, ORCID, researchmap)
   }, striped = TRUE, hover = TRUE, spacing = "s", width = "100%")
 
   # Main pipeline
@@ -249,24 +248,52 @@ server <- function(input, output, session) {
     }
 
     # Build member info (preserve input order)
+    # Resolve names: user input > ORCID profile > researchmap profile
+    # Format all as "Family I" (short form)
     for (i in seq_len(nrow(members))) {
-      resolved <- members$name[i]
-      if (!is.na(resolved) && resolved != "") {
-        for (bn in bold_names) {
-          if (str_detect(str_to_lower(bn), fixed(str_to_lower(resolved)))) {
-            resolved <- bn
-            break
-          }
+      resolved <- NA_character_
+
+      # 1. Try user-provided name
+      if (!is.na(members$name[i]) && members$name[i] != "") {
+        resolved <- members$name[i]
+      }
+
+      # 2. If no name, try to find from bold_names (ORCID/researchmap profile names)
+      if (is.na(resolved)) {
+        # bold_names were collected during fetch — find one matching this member's IDs
+        # ORCID names are added first, then researchmap names, in order
+        # Try to pick the right one by index position or from remaining pool
+        orcid_id <- members$orcid[i]
+        rm_id <- members$researchmap[i]
+        # Re-fetch if needed (names should already be in bold_names from fetch stage)
+        if (!is.na(orcid_id)) {
+          oname <- fetch_orcid_name(orcid_id)
+          if (!is.na(oname)) resolved <- oname
+        }
+        if (is.na(resolved) && !is.na(rm_id)) {
+          rname <- fetch_researchmap_name(rm_id)
+          if (!is.na(rname)) resolved <- rname
         }
       }
+
+      # 3. Format as "Family I" (short form) for consistency
+      display_name <- if (!is.na(resolved)) format_author_short(resolved) else "Unknown"
+
+      # Also ensure the full name is in bold_names for highlighting
+      if (!is.na(resolved) && !resolved %in% bold_names) {
+        bold_names <- c(bold_names, resolved)
+      }
+
       member_info <- bind_rows(member_info, tibble(
         name = members$name[i] %||% NA_character_,
         orcid = members$orcid[i],
         openalex = members$openalex[i],
         researchmap = members$researchmap[i],
-        resolved_name = resolved
+        resolved_name = display_name
       ))
     }
+
+    bold_names <- unique(bold_names)
 
     list(
       pubs = all_pubs,
