@@ -38,17 +38,37 @@ fetch_openalex_by_doi <- function(doi) {
 # Format author name: "Yuki Furukawa" → "Furukawa Y"
 # Handles compound surnames: "Annemieke van Straten" → "van Straten A"
 format_author_short <- function(display_name) {
-  # Title-case each part first to handle ALL CAPS input
+  # Capitalize a word, including after hyphens: "fares-otero" → "Fares-Otero"
   cap_word <- function(w) {
     lw <- str_to_lower(w)
-    # Preserve particles as lowercase
+    # Preserve surname particles as lowercase
     if (lw %in% c("van", "von", "de", "del", "di", "la", "le", "el", "al",
                    "den", "der", "das", "dos", "du", "ten")) return(lw)
-    paste0(toupper(substr(lw, 1, 1)), substr(lw, 2, nchar(lw)))
+    hyph_parts <- str_split(lw, "-")[[1]]
+    hyph_parts <- map_chr(hyph_parts, ~ paste0(toupper(substr(.x, 1, 1)), substr(.x, 2, nchar(.x))))
+    paste(hyph_parts, collapse = "-")
   }
+
   parts <- str_split(str_trim(display_name), "\\s+")[[1]]
+  if (length(parts) == 1) return(cap_word(parts[1]))
+
+  # Detect if already in short form: "Furukawa Y" or "Schneider-Thoma J"
+  # Short form = exactly one multi-char word + one or more single-char/initial parts
+  # NOT short form = "Natalia E. Fares-Otero" (multiple full words + middle initial)
+  # An "initial" part: single letter, letter with period, or 2-3 uppercase letters (e.g., DD, TA, NE)
+  stripped <- str_remove(parts, "\\.$")
+  is_initial <- nchar(stripped) <= 1 | (nchar(stripped) <= 3 & str_detect(stripped, "^[A-Z]+$"))
+  n_full_words <- sum(!is_initial)
+  n_initials <- sum(is_initial)
+  if (n_full_words == 1 && n_initials >= 1) {
+    # Already short form — capitalize full words, keep initials as uppercase
+    result_parts <- map2_chr(parts, is_initial, function(p, is_init) {
+      if (is_init) toupper(str_remove(p, "\\.$")) else cap_word(p)
+    })
+    return(paste(result_parts, collapse = " "))
+  }
+
   parts <- map_chr(parts, cap_word)
-  if (length(parts) == 1) return(parts[1])
 
   # Detect surname particles
   particles <- c("van", "von", "de", "del", "di", "la", "le", "el", "al",
