@@ -142,30 +142,36 @@ server <- function(input, output, session) {
     )
     errors <- character()
 
-    n_total <- sum(!is.na(members$orcid)) + sum(!is.na(members$openalex)) + sum(!is.na(members$researchmap))
-
     withProgress(message = "Fetching publications...", value = 0, {
-      # Fetch from ORCID
+      # Fetch from ORCID + auto-resolve OpenAlex author ID for supplementary coverage
       for (i in seq_len(nrow(members))) {
         orcid_id <- members$orcid[i]
         if (!is.na(orcid_id)) {
-          incProgress(1 / max(n_total, 1), detail = paste0("ORCID: ", orcid_id))
+          incProgress(0.1, detail = paste0("ORCID: ", orcid_id))
           tryCatch({
             pubs <- fetch_orcid_works(orcid_id)
             all_pubs <- bind_rows(all_pubs, pubs)
             oname <- fetch_orcid_name(orcid_id)
             if (!is.na(oname)) bold_names <- c(bold_names, oname)
+
+            # Auto-resolve ORCID → OpenAlex author ID for supplementary works
+            if (is.na(members$openalex[i])) {
+              resolved_oa <- resolve_orcid_to_openalex(orcid_id)
+              if (!is.na(resolved_oa)) {
+                members$openalex[i] <- resolved_oa
+              }
+            }
           }, error = function(e) {
             errors <<- c(errors, paste("ORCID error:", orcid_id, e$message))
           })
         }
       }
 
-      # Fetch from OpenAlex (author works) — filter by member name
+      # Fetch from OpenAlex (author works) — supplements ORCID with additional publications
       for (i in seq_len(nrow(members))) {
         oa_id <- members$openalex[i]
         if (!is.na(oa_id)) {
-          incProgress(1 / max(n_total, 1), detail = paste0("OpenAlex: ", oa_id))
+          incProgress(0.1, detail = paste0("OpenAlex: ", oa_id))
           tryCatch({
             pubs <- fetch_openalex_author_works(oa_id)
             # Filter: only keep pubs where member's family name appears in authors
@@ -193,7 +199,7 @@ server <- function(input, output, session) {
       for (i in seq_len(nrow(members))) {
         rm_id <- members$researchmap[i]
         if (!is.na(rm_id)) {
-          incProgress(1 / max(n_total, 1), detail = paste0("researchmap: ", rm_id))
+          incProgress(0.1, detail = paste0("researchmap: ", rm_id))
           tryCatch({
             pubs <- fetch_researchmap_works(rm_id)
             all_pubs <- bind_rows(all_pubs, pubs)
