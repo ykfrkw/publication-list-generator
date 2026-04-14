@@ -86,7 +86,8 @@ enrich_with_openalex <- function(df, progress_fn = NULL) {
 
     meta <- fetch_openalex_by_doi(df$doi[idx])
     if (!is.null(meta)) {
-      if (is.na(df$authors[idx]) || df$authors[idx] == "") df$authors[idx] <- meta$authors
+      # Always use OpenAlex authors (standardized short form: "Furukawa Y")
+      if (length(meta$authors) > 0 && meta$authors != "") df$authors[idx] <- meta$authors
       if (df$journal[idx] == "" && !is.na(meta$journal)) df$journal[idx] <- meta$journal
       if ((is.na(df$pmid[idx]) || df$pmid[idx] == "") && !is.na(meta$pmid)) df$pmid[idx] <- meta$pmid
       df$openalex_type[idx] <- meta$type

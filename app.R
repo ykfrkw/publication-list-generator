@@ -122,6 +122,48 @@ server <- function(input, output, session) {
     members <- parsed_members()
     req(nrow(members) > 0)
 
+    # Resolve names for all members and merge duplicates
+    withProgress(message = "Resolving member names...", value = 0, {
+      for (i in seq_len(nrow(members))) {
+        incProgress(1 / nrow(members))
+        if (is.na(members$name[i]) || members$name[i] == "") {
+          # Try ORCID
+          if (!is.na(members$orcid[i])) {
+            oname <- fetch_orcid_name(members$orcid[i])
+            if (!is.na(oname)) { members$name[i] <- oname; next }
+          }
+          # Try researchmap
+          if (!is.na(members$researchmap[i])) {
+            rname <- fetch_researchmap_name(members$researchmap[i])
+            if (!is.na(rname)) members$name[i] <- rname
+          }
+        }
+      }
+    })
+
+    # Merge rows that resolve to the same person (normalized name matching)
+    normalize_name <- function(n) {
+      if (is.na(n) || n == "") return(NA_character_)
+      n |> str_to_lower() |> iconv(to = "ASCII//TRANSLIT") |>
+        str_remove_all("[^a-z ]") |> str_squish()
+    }
+    members$name_key <- map_chr(members$name, normalize_name)
+
+    merged <- members |>
+      group_by(name_key) |>
+      summarize(
+        name = first(na.omit(name)),
+        orcid = first(na.omit(orcid), default = NA_character_),
+        openalex = first(na.omit(openalex), default = NA_character_),
+        researchmap = first(na.omit(researchmap), default = NA_character_),
+        .groups = "drop"
+      ) |>
+      # Preserve original order (by first appearance)
+      arrange(match(name_key, unique(members$name_key))) |>
+      select(-name_key)
+
+    members <- merged
+
     all_pubs <- empty_pubs()
     bold_names <- character()
     member_info <- tibble(
@@ -247,41 +289,12 @@ server <- function(input, output, session) {
       all_pubs <- all_pubs |> arrange(desc(year), desc(month), str_to_lower(authors))
     }
 
-    # Build member info (preserve input order)
-    # Resolve names: user input > ORCID profile > researchmap profile
-    # Format all as "Family I" (short form)
+    # Build member info — names already resolved in merge step
     for (i in seq_len(nrow(members))) {
-      resolved <- NA_character_
+      display_name <- if (!is.na(members$name[i]) && members$name[i] != "") members$name[i] else "Unknown"
 
-      # 1. Try user-provided name
-      if (!is.na(members$name[i]) && members$name[i] != "") {
-        resolved <- members$name[i]
-      }
-
-      # 2. If no name, try to find from bold_names (ORCID/researchmap profile names)
-      if (is.na(resolved)) {
-        # bold_names were collected during fetch — find one matching this member's IDs
-        # ORCID names are added first, then researchmap names, in order
-        # Try to pick the right one by index position or from remaining pool
-        orcid_id <- members$orcid[i]
-        rm_id <- members$researchmap[i]
-        # Re-fetch if needed (names should already be in bold_names from fetch stage)
-        if (!is.na(orcid_id)) {
-          oname <- fetch_orcid_name(orcid_id)
-          if (!is.na(oname)) resolved <- oname
-        }
-        if (is.na(resolved) && !is.na(rm_id)) {
-          rname <- fetch_researchmap_name(rm_id)
-          if (!is.na(rname)) resolved <- rname
-        }
-      }
-
-      # 3. Full name for Members list display
-      display_name <- if (!is.na(resolved)) resolved else "Unknown"
-
-      # Also ensure the full name is in bold_names for highlighting
-      if (!is.na(resolved) && !resolved %in% bold_names) {
-        bold_names <- c(bold_names, resolved)
+      if (display_name != "Unknown" && !display_name %in% bold_names) {
+        bold_names <- c(bold_names, display_name)
       }
 
       member_info <- bind_rows(member_info, tibble(

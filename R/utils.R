@@ -60,7 +60,7 @@ is_researchmap_id <- function(x) {
 parse_member_input <- function(text) {
   if (is.null(text) || str_trim(text) == "") return(tibble())
 
-  lines <- str_split(text, "\n")[[1]] |> str_trim() |> discard(~ .x == "")
+  lines <- str_split(text, "\n")[[1]] |> discard(~ str_trim(.x) == "")
   if (length(lines) == 0) return(tibble())
 
   # Detect delimiter: tab (Excel paste) or comma
