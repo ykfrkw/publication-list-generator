@@ -27,9 +27,11 @@ is_open_review_journal <- function(journal) {
 
 # Vectorized version for use in mutate
 categorize_pub <- function(journal, orcid_type, openalex_type, peer_review_approved) {
-  journal <- journal %||% ""
-  oa_type <- str_to_lower(openalex_type %||% "")
-  orcid_t <- str_to_lower(orcid_type %||% "")
+  if (is.na(journal)) journal <- ""
+  if (is.na(orcid_type)) orcid_type <- ""
+  if (is.na(openalex_type)) openalex_type <- ""
+  oa_type <- str_to_lower(openalex_type)
+  orcid_t <- str_to_lower(orcid_type)
 
   # 1. Preprint servers
   if (is_preprint_server(journal)) return("preprint")

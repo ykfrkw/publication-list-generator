@@ -180,6 +180,8 @@ empty_pubs <- function() {
     pmid = character(),
     orcid_type = character(),
     source = character(),
-    member_id = character()
+    member_id = character(),
+    openalex_type = character(),
+    peer_review_approved = logical()
   )
 }

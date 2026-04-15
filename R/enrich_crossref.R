@@ -33,9 +33,8 @@ check_peer_review_approval <- function(doi) {
 
 # Apply peer review check to open-review journal publications
 enrich_peer_review <- function(df) {
+  if (!"peer_review_approved" %in% names(df)) df$peer_review_approved <- NA
   if (nrow(df) == 0) return(df)
-
-  df$peer_review_approved <- NA
 
   open_review_idx <- which(!is.na(df$doi) & vapply(df$journal, is_open_review_journal, logical(1)))
 

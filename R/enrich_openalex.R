@@ -90,10 +90,9 @@ format_author_short <- function(display_name) {
 
 # Batch enrich publications via OpenAlex
 enrich_with_openalex <- function(df, progress_fn = NULL) {
+  # Always add the column, even for empty df
+  if (!"openalex_type" %in% names(df)) df$openalex_type <- NA_character_
   if (nrow(df) == 0) return(df)
-
-  # Add openalex columns
-  df$openalex_type <- NA_character_
 
   dois <- which(!is.na(df$doi) & df$doi != "")
   total <- length(dois)
