@@ -51,10 +51,12 @@ fetch_researchmap_works <- function(permalink) {
       journal_ja <- pluck_chr(item, "publication_name", "ja")
       journal <- if (!is.na(journal_en) && journal_en != "") journal_en else journal_ja
 
-      # Authors
+      # Authors — researchmap typically uses Japanese "Family Given" order in authors.en
       authors_en <- purrr::pluck(item, "authors", "en", .default = NULL)
       if (!is.null(authors_en)) {
         author_names <- map_chr(authors_en, "name")
+        # Format as "Family G" (assuming family-first order, Japanese convention)
+        author_names <- map_chr(author_names, format_author_family_first)
         authors <- paste(author_names, collapse = ", ")
       } else {
         authors <- NA_character_

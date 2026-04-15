@@ -35,6 +35,39 @@ fetch_openalex_by_doi <- function(doi) {
   }, error = function(e) NULL)
 }
 
+# Format author name when family comes FIRST (Japanese convention): "Kikuchi Sou" → "Kikuchi S"
+format_author_family_first <- function(display_name) {
+  if (is.na(display_name) || display_name == "") return(display_name)
+
+  cap_word <- function(w) {
+    lw <- str_to_lower(w)
+    if (lw %in% c("van", "von", "de", "del", "di", "la", "le", "el", "al",
+                   "den", "der", "das", "dos", "du", "ten")) return(lw)
+    hyph_parts <- str_split(lw, "-")[[1]]
+    hyph_parts <- map_chr(hyph_parts, ~ paste0(toupper(substr(.x, 1, 1)), substr(.x, 2, nchar(.x))))
+    paste(hyph_parts, collapse = "-")
+  }
+
+  parts <- str_split(str_trim(display_name), "\\s+")[[1]]
+  if (length(parts) == 1) return(cap_word(parts[1]))
+
+  # If already in short form (one full word + initial), keep as-is
+  stripped <- str_remove(parts, "\\.$")
+  is_initial <- nchar(stripped) <= 1 | (nchar(stripped) <= 3 & str_detect(stripped, "^[A-Z]+$"))
+  n_full <- sum(!is_initial)
+  if (n_full == 1 && any(is_initial)) {
+    return(paste(map2_chr(parts, is_initial, function(p, i)
+      if (i) toupper(str_remove(p, "\\.$")) else cap_word(p)), collapse = " "))
+  }
+
+  parts <- map_chr(parts, cap_word)
+  # Family is first, given is rest
+  family <- parts[1]
+  given_parts <- parts[-1]
+  initials <- paste0(substr(given_parts, 1, 1), collapse = "")
+  paste(family, initials)
+}
+
 # Format author name: "Yuki Furukawa" → "Furukawa Y"
 # Handles compound surnames: "Annemieke van Straten" → "van Straten A"
 format_author_short <- function(display_name) {
