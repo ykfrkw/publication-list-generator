@@ -63,6 +63,7 @@ fetch_orcid_works <- function(orcid_id) {
       tibble(
         title = title %||% "",
         authors = NA_character_,
+        authors_full = NA_character_,
         journal = journal %||% "",
         year = year_val,
         month = month_val,

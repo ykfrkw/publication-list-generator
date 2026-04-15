@@ -193,6 +193,7 @@ empty_pubs <- function() {
   tibble(
     title = character(),
     authors = character(),
+    authors_full = character(),
     journal = character(),
     year = integer(),
     month = integer(),

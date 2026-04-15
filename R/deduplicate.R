@@ -64,6 +64,7 @@ deduplicate_pubs <- function(df) {
     summarize(
       title = first(title),
       authors = first(na.omit(authors), default = NA_character_),
+      authors_full = first(na.omit(authors_full), default = NA_character_),
       journal = first(na.omit(journal[journal != ""]), default = ""),
       year = first(year),
       month = first(na.omit(month), default = NA_integer_),
@@ -98,6 +99,7 @@ deduplicate_pubs <- function(df) {
         # Fill missing authors
         if (is.na(deduped_doi$authors[idx[1]]) && !is.na(no_doi_matched$authors[i])) {
           deduped_doi$authors[idx[1]] <- no_doi_matched$authors[i]
+          deduped_doi$authors_full[idx[1]] <- no_doi_matched$authors_full[i]
         }
       }
     }
@@ -109,6 +111,7 @@ deduplicate_pubs <- function(df) {
     summarize(
       title = first(title),
       authors = first(na.omit(authors), default = NA_character_),
+      authors_full = first(na.omit(authors_full), default = NA_character_),
       journal = first(na.omit(journal[journal != ""]), default = ""),
       year = first(year),
       month = first(na.omit(month), default = NA_integer_),

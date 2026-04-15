@@ -54,12 +54,14 @@ fetch_researchmap_works <- function(permalink) {
       # Authors — researchmap typically uses Japanese "Family Given" order in authors.en
       authors_en <- purrr::pluck(item, "authors", "en", .default = NULL)
       if (!is.null(authors_en)) {
-        author_names <- map_chr(authors_en, "name")
+        author_names_full <- map_chr(authors_en, "name")
         # Format as "Family G" (assuming family-first order, Japanese convention)
-        author_names <- map_chr(author_names, format_author_family_first)
-        authors <- paste(author_names, collapse = ", ")
+        author_names_short <- map_chr(author_names_full, format_author_family_first)
+        authors <- paste(author_names_short, collapse = ", ")
+        authors_full <- paste(author_names_full, collapse = "|")
       } else {
         authors <- NA_character_
+        authors_full <- NA_character_
       }
 
       # Date parsing (YYYY-MM or YYYY)
@@ -77,6 +79,7 @@ fetch_researchmap_works <- function(permalink) {
       tibble(
         title = title %||% "",
         authors = authors,
+        authors_full = authors_full,
         journal = journal %||% "",
         year = year_val,
         month = month_val,

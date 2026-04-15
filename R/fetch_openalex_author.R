@@ -94,19 +94,24 @@ fetch_openalex_author_works <- function(author_id) {
       pmid_url <- pluck_chr(work, "ids", "pmid")
       pmid <- if (!is.na(pmid_url)) str_extract(pmid_url, "\\d+$") else NA_character_
 
-      # Authors
+      # Authors — keep full names for matching, short form for display
       authorships <- work$authorships %||% list()
       if (length(authorships) > 0) {
-        authors <- paste(map_chr(authorships, function(a) {
-          format_author_short(a$author$display_name %||% "Unknown")
-        }), collapse = ", ")
+        full_names <- map_chr(authorships, function(a) {
+          a$author$display_name %||% a$raw_author_name %||% "Unknown"
+        })
+        short_names <- map_chr(full_names, format_author_short)
+        authors <- paste(short_names, collapse = ", ")
+        authors_full <- paste(full_names, collapse = "|")
       } else {
         authors <- NA_character_
+        authors_full <- NA_character_
       }
 
       tibble(
         title = title,
         authors = authors,
+        authors_full = authors_full,
         journal = journal %||% "",
         year = as.integer(year),
         month = NA_integer_,

@@ -2,8 +2,10 @@
 # Citation Formatting (Vancouver, APA, Harvard, Chicago, Nature)
 # =========================================================
 
-format_citation <- function(authors, title, journal, year, doi, style = "Vancouver", bold_names = character()) {
-  author_str <- format_authors_for_style(authors, style, bold_names)
+format_citation <- function(authors, title, journal, year, doi,
+                             style = "Vancouver", bold_names = character(),
+                             authors_full = NA_character_) {
+  author_str <- format_authors_for_style(authors, authors_full, style, bold_names)
   doi_html <- if (!is.na(doi) && doi != "") {
     paste0('doi: <a href="https://doi.org/', doi, '" target="_blank">', doi, '</a>')
   } else ""
@@ -61,20 +63,39 @@ format_citation <- function(authors, title, journal, year, doi, style = "Vancouv
       )
       paste(parts, collapse = " ")
     },
-    # Default
     paste(author_str, title, journal, year, sep = ". ")
   )
 }
 
-format_authors_for_style <- function(authors_str, style, bold_names) {
+format_authors_for_style <- function(authors_str, authors_full_str, style, bold_names) {
   if (is.na(authors_str) || authors_str == "") return("")
 
+  # Short-form list for display (comma-separated)
   authors <- str_split(authors_str, ",\\s*")[[1]] |> str_trim()
   if (length(authors) == 0) return("")
 
-  # Apply bold+underline to member names
-  formatted <- map_chr(authors, function(name) boldify(name, bold_names))
-  is_highlighted <- map_lgl(formatted, ~ str_starts(.x, "<strong>"))
+  # Full-name list for bold matching (pipe-separated)
+  # Fall back to the short form if full is not available
+  full_list <- if (!is.na(authors_full_str) && authors_full_str != "") {
+    str_split(authors_full_str, "\\|")[[1]] |> str_trim()
+  } else {
+    authors  # fall back
+  }
+  # Pad/truncate to match authors length
+  if (length(full_list) != length(authors)) {
+    # Misalignment: fall back to short form
+    full_list <- authors
+  }
+
+  # Decide bold status per author using FULL name
+  is_bold <- map_lgl(full_list, ~ matches_bold_name(.x, bold_names))
+
+  # Apply markup to the short-form display names
+  formatted <- map2_chr(authors, is_bold, function(name, b) {
+    if (b) paste0("<strong><u>", htmltools::htmlEscape(name), "</u></strong>")
+    else htmltools::htmlEscape(name)
+  })
+  is_highlighted <- is_bold
 
   # Truncation: ≤6 show all, >6 show first 3 + hidden highlighted + et al.
   if (length(formatted) > 6) {
@@ -105,7 +126,6 @@ format_authors_for_style <- function(authors_str, style, bold_names) {
         if (length(formatted) == 1) formatted[1]
         else paste0(paste(formatted[-length(formatted)], collapse = ", "), ", and ", formatted[length(formatted)])
       },
-      # Vancouver, Nature, default
       paste(formatted, collapse = ", ")
     )
   }
@@ -113,76 +133,64 @@ format_authors_for_style <- function(authors_str, style, bold_names) {
   result
 }
 
-boldify <- function(name, bold_names) {
-  if (name == "" || length(bold_names) == 0) return(htmltools::htmlEscape(name))
+# Check if an author's FULL name matches any bold_name.
+# Strategy: all parts of bold_name (normalized) must appear in the author's full name.
+# This distinguishes "Yuki Furukawa" from "Yuri Furukawa".
+matches_bold_name <- function(full_name, bold_names) {
+  if (is.na(full_name) || full_name == "" || length(bold_names) == 0) return(FALSE)
 
-  # Normalize for matching: strip accents, lowercase
-  normalize_for_match <- function(s) {
-    s |>
-      str_to_lower() |>
-      iconv(to = "ASCII//TRANSLIT") |>  # ü→u, é→e, etc.
-      str_remove_all("[^a-z ]") |>
-      str_trim()
+  normalize <- function(s) {
+    s |> str_to_lower() |> iconv(to = "ASCII//TRANSLIT") |>
+      str_remove_all("[^a-z ]") |> str_squish()
   }
 
-  name_norm <- normalize_for_match(name)
+  name_norm <- normalize(full_name)
+  if (name_norm == "") return(FALSE)
+
+  # Is the author name itself in short form (exactly one full word + initial(s))?
+  # If so, fall back to family + initial strategy.
+  author_parts <- str_split(name_norm, "\\s+")[[1]]
+  author_is_short <- length(author_parts) >= 2 &&
+    sum(nchar(author_parts) >= 2) == 1  # one long + one or more initials
 
   for (bn in bold_names) {
-    bn_norm <- normalize_for_match(bn)
-
-    # Strategy 1: All parts of bold_name appear in author name (original logic)
+    bn_norm <- normalize(bn)
+    if (bn_norm == "") next
     bn_parts <- str_split(bn_norm, "\\s+")[[1]]
-    if (length(bn_parts) > 0 && all(vapply(bn_parts, function(p) str_detect(name_norm, fixed(p)), logical(1)))) {
-      return(paste0("<strong><u>", htmltools::htmlEscape(name), "</u></strong>"))
-    }
 
-    # Strategy 2: Family name + initial match
-    # e.g., bold_name="Spyridon Siafis" should match "Siafis S" or "S Siafis"
-    # Extract family name (last part, or compound like "van Straten")
-    bn_words <- str_split(bn_norm, "\\s+")[[1]]
-    if (length(bn_words) >= 2) {
-      # Try compound surname detection: if a word is a particle (van, von, de, del, la, le, el, al)
-      particles <- c("van", "von", "de", "del", "di", "la", "le", "el", "al", "den", "der", "das", "dos")
-      # Find where surname starts (first particle or last word)
-      surname_start <- length(bn_words)
-      for (k in seq_along(bn_words)) {
-        if (bn_words[k] %in% particles && k < length(bn_words)) {
+    if (author_is_short) {
+      # Author is short-form e.g. "furukawa y" — match against family+initial
+      family <- author_parts[nchar(author_parts) >= 2][1]
+      author_initials <- paste(author_parts[nchar(author_parts) == 1], collapse = "")
+      # bold_name family = last word (or particle-prefixed compound)
+      particles <- c("van","von","de","del","di","la","le","el","al","den","der","das","dos")
+      surname_start <- length(bn_parts)
+      for (k in seq_along(bn_parts)) {
+        if (bn_parts[k] %in% particles && k < length(bn_parts) && k > 1) {
           surname_start <- k
           break
         }
       }
-      family <- paste(bn_words[surname_start:length(bn_words)], collapse = " ")
-      given_parts <- bn_words[seq_len(surname_start - 1)]
-      given_initials <- paste0(substr(given_parts, 1, 1), collapse = "")
-
-      name_words <- str_split(name_norm, "\\s+")[[1]]
-
-      # Check: does name contain family name?
-      family_match <- str_detect(name_norm, fixed(family))
-
-      if (family_match) {
-        # Check if remaining part is initials of given name
-        name_without_family <- str_trim(str_remove(name_norm, fixed(family)))
-        name_initials <- paste0(substr(str_split(name_without_family, "\\s*")[[1]], 1, 1), collapse = "")
-        # Also try: remaining is just the first letter(s)
-        name_remaining_chars <- str_remove_all(name_without_family, "\\s+")
-
-        if (name_remaining_chars == "" ||  # family name only
-            str_detect(given_initials, fixed(name_remaining_chars)) ||
-            str_detect(name_remaining_chars, fixed(given_initials)) ||
-            # Single initial match
-            (nchar(name_remaining_chars) == 1 && substr(given_initials, 1, 1) == name_remaining_chars)) {
-          return(paste0("<strong><u>", htmltools::htmlEscape(name), "</u></strong>"))
-        }
+      bn_family <- paste(bn_parts[surname_start:length(bn_parts)], collapse = " ")
+      bn_initials <- paste0(substr(bn_parts[seq_len(surname_start - 1)], 1, 1), collapse = "")
+      if (family == bn_family && (author_initials == "" || str_detect(bn_initials, fixed(author_initials)))) {
+        return(TRUE)
+      }
+    } else {
+      # Author is full-form: every part of bold_name must appear in author name
+      if (all(vapply(bn_parts, function(p) str_detect(name_norm, fixed(p)), logical(1)))) {
+        return(TRUE)
       }
     }
   }
-  htmltools::htmlEscape(name)
+  FALSE
 }
 
 # Plain text version (strip HTML)
-format_citation_plain <- function(authors, title, journal, year, doi, style = "Vancouver", bold_names = character()) {
-  html <- format_citation(authors, title, journal, year, doi, style, bold_names)
+format_citation_plain <- function(authors, title, journal, year, doi,
+                                   style = "Vancouver", bold_names = character(),
+                                   authors_full = NA_character_) {
+  html <- format_citation(authors, title, journal, year, doi, style, bold_names, authors_full)
   html |>
     str_remove_all("</?strong>") |>
     str_remove_all("</?u>") |>

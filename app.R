@@ -347,7 +347,7 @@ server <- function(input, output, session) {
 
       items <- map(seq_len(nrow(cat_pubs)), function(j) {
         p <- cat_pubs[j, ]
-        citation_html <- format_citation(p$authors, p$title, p$journal, p$year, p$doi, style, bold_names)
+        citation_html <- format_citation(p$authors, p$title, p$journal, p$year, p$doi, style, bold_names, p$authors_full)
         pmid_html <- if (!is.na(p$pmid) && p$pmid != "") {
           paste0(' PMID: <a href="https://pubmed.ncbi.nlm.nih.gov/', p$pmid, '" target="_blank">', p$pmid, '</a>')
         } else ""

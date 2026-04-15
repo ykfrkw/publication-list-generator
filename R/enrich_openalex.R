@@ -14,19 +14,20 @@ fetch_openalex_by_doi <- function(doi) {
 
     data <- fromJSON(content(res, "text", encoding = "UTF-8"), simplifyVector = FALSE)
 
-    # Extract authors
+    # Extract authors — keep both full and short
     authorships <- data$authorships %||% list()
-    authors <- map_chr(authorships, function(a) {
-      name <- a$author$display_name %||% a$raw_author_name %||% "Unknown"
-      format_author_short(name)
+    full_names <- map_chr(authorships, function(a) {
+      a$author$display_name %||% a$raw_author_name %||% "Unknown"
     })
+    short_names <- map_chr(full_names, format_author_short)
 
     # Extract PMID
     pmid_url <- pluck_chr(data, "ids", "pmid")
     pmid <- if (!is.na(pmid_url)) str_extract(pmid_url, "\\d+$") else NA_character_
 
     list(
-      authors = paste(authors, collapse = ", "),
+      authors = paste(short_names, collapse = ", "),
+      authors_full = paste(full_names, collapse = "|"),
       type = data$type %||% "article",
       journal = pluck_chr(data, "primary_location", "source", "display_name"),
       pmid = pmid,
@@ -138,8 +139,11 @@ enrich_with_openalex <- function(df, progress_fn = NULL) {
 
     meta <- fetch_openalex_by_doi(df$doi[idx])
     if (!is.null(meta)) {
-      # Always use OpenAlex authors (standardized short form: "Furukawa Y")
-      if (length(meta$authors) > 0 && meta$authors != "") df$authors[idx] <- meta$authors
+      # Always use OpenAlex authors (standardized short form + full names)
+      if (length(meta$authors) > 0 && meta$authors != "") {
+        df$authors[idx] <- meta$authors
+        df$authors_full[idx] <- meta$authors_full
+      }
       if (df$journal[idx] == "" && !is.na(meta$journal)) df$journal[idx] <- meta$journal
       if ((is.na(df$pmid[idx]) || df$pmid[idx] == "") && !is.na(meta$pmid)) df$pmid[idx] <- meta$pmid
       df$openalex_type[idx] <- meta$type
@@ -191,10 +195,11 @@ enrich_by_title <- function(df, progress_fn = NULL) {
             df$openalex_type[idx] <- work$type %||% NA_character_
 
             if (is.na(df$authors[idx]) || df$authors[idx] == "") {
-              auths <- map_chr(work$authorships %||% list(), function(a) {
-                format_author_short(a$author$display_name %||% "Unknown")
+              full_names <- map_chr(work$authorships %||% list(), function(a) {
+                a$author$display_name %||% a$raw_author_name %||% "Unknown"
               })
-              df$authors[idx] <- paste(auths, collapse = ", ")
+              df$authors[idx] <- paste(map_chr(full_names, format_author_short), collapse = ", ")
+              df$authors_full[idx] <- paste(full_names, collapse = "|")
             }
 
             if (df$journal[idx] == "") {
