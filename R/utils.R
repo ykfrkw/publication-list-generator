@@ -109,24 +109,44 @@ parse_member_input <- function(text) {
       val
     }
 
-    # Get raw values
+    # Get raw values from declared columns
     raw_name <- get_col(col_map$name)
     raw_orcid <- get_col(col_map$orcid)
     raw_openalex <- get_col(col_map$openalex)
     raw_researchmap <- get_col(col_map$researchmap)
 
-    # Also scan ALL cells for URLs that belong in specific columns
-    # This handles cases where a URL is pasted into the wrong column or a single-column input
+    # Validate: each value goes to the column matching its content
+    # (handles mixed inputs where URLs of different types are pasted in one column)
+    reclassify <- function(v) {
+      if (is.na(v) || v == "") return(NULL)
+      if (str_detect(v, "orcid\\.org") || str_detect(v, "^\\d{4}-\\d{4}-\\d{4}-\\d{3}[\\dX]$")) return("orcid")
+      if (str_detect(v, "openalex\\.org") || str_detect(v, "^A\\d{5,15}$")) return("openalex")
+      if (str_detect(v, "researchmap\\.jp")) return("researchmap")
+      NULL  # unknown — keep as-is (likely a name)
+    }
+
+    # Check each raw value: if it doesn't match its column, move it
+    for (slot in c("orcid", "openalex", "researchmap")) {
+      raw_var <- paste0("raw_", slot)
+      v <- get(raw_var)
+      if (!is.na(v)) {
+        actual <- reclassify(v)
+        if (!is.null(actual) && actual != slot) {
+          # Move to correct slot
+          assign(paste0("raw_", actual), v)
+          assign(raw_var, NA_character_)
+        }
+      }
+    }
+
+    # Scan other cells for URLs/IDs we haven't captured yet
     all_vals <- map_chr(seq_along(row), ~ str_trim(row[.x]))
     for (v in all_vals) {
       if (is.na(v) || v == "") next
-      if (str_detect(v, "orcid\\.org") && is.na(raw_orcid)) raw_orcid <- v
-      if (str_detect(v, "openalex\\.org") && is.na(raw_openalex)) raw_openalex <- v
-      if (str_detect(v, "researchmap\\.jp") && is.na(raw_researchmap)) raw_researchmap <- v
-      # Detect bare ORCID pattern in any cell
-      if (is.na(raw_orcid) && str_detect(v, "^\\d{4}-\\d{4}-\\d{4}-\\d{3}[\\dX]$")) raw_orcid <- v
-      # Detect bare OpenAlex ID
-      if (is.na(raw_openalex) && str_detect(v, "^A\\d{5,15}$")) raw_openalex <- v
+      actual <- reclassify(v)
+      if (is.null(actual)) next
+      cur <- get(paste0("raw_", actual))
+      if (is.na(cur)) assign(paste0("raw_", actual), v)
     }
 
     tibble(

@@ -376,9 +376,11 @@ server <- function(input, output, session) {
       function copyResults() {
         var el = document.getElementById('results-content');
         if (!el) return;
-        var html = '<div style=\"font-family:serif;font-size:12pt;\">' + el.innerHTML + '</div>' +
+        var warning = '<p style=\"color:red;font-weight:bold;\">[Disclaimer] This list is generated from a combination of ORCID, OpenAlex, and researchmap. If any of these sources contain errors, relevant publications may be missing or unrelated publications may be included. Please verify the final list.</p>';
+        var html = '<div style=\"font-family:serif;font-size:12pt;\">' + warning + el.innerHTML + '</div>' +
           '<p style=\"font-size:9pt;color:gray;\">Generated with <a href=\"https://yukifurukawa.jp/publication-list-generator/\">Publication List Generator</a></p>';
-        var plain = el.innerText + '\\nGenerated with Publication List Generator (https://yukifurukawa.jp/publication-list-generator/)';
+        var plainWarning = \"[Disclaimer] This list is generated from a combination of ORCID, OpenAlex, and researchmap. If any of these sources contain errors, relevant publications may be missing or unrelated publications may be included. Please verify the final list.\\n\\n\";
+        var plain = plainWarning + el.innerText + \"\\nGenerated with Publication List Generator (https://yukifurukawa.jp/publication-list-generator/)\";
         try {
           navigator.clipboard.write([new ClipboardItem({
             'text/html': new Blob([html], {type: 'text/html'}),
